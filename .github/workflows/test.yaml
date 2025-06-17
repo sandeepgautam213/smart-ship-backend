@@ -1,0 +1,64 @@
+name: Run Tests on Push
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:14
+        ports: ['5432:5432']
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: smartship
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DB_HOST: localhost
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_PASSWORD: password
+      DB_NAME: smartship
+      PORT: 5000
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v3
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: 18
+
+    - name: Install Dependencies
+      run: npm install
+
+    - name: Wait for PostgreSQL
+      run: |
+        until pg_isready -h localhost -p 5432; do
+          echo "Waiting for PostgreSQL..."
+          sleep 2
+        done
+
+    - name: Create Tables
+      run: |
+        sudo apt-get update && sudo apt-get install -y postgresql-client
+        psql -h localhost -U postgres -d smartship -c "CREATE TABLE IF NOT EXISTS ships (id SERIAL PRIMARY KEY, engine_type VARCHAR(100), capacity INTEGER);"
+        psql -h localhost -U postgres -d smartship -c "CREATE TABLE IF NOT EXISTS voyages (id SERIAL PRIMARY KEY, origin VARCHAR(100), destination VARCHAR(100), cargo_weight INTEGER, departure_time TIMESTAMP, weather VARCHAR(100), eta TIMESTAMP, speed_profile JSONB, fuel_estimate FLOAT);"
+        psql -h localhost -U postgres -d smartship -c "CREATE TABLE IF NOT EXISTS feedback (id SERIAL PRIMARY KEY, voyage_id INTEGER REFERENCES voyages(id), actual_fuel_used FLOAT, time_taken VARCHAR(50), deviation_notes TEXT);"
+
+    - name: Run Tests
+      run: npm test
